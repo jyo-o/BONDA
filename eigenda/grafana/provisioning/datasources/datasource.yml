@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: BONDA-TimescaleDB
+    uid: bonda-tsdb
+    type: postgres
+    url: timescaledb:5432
+    database: bonda
+    user: bonda
+    secureJsonData:
+      password: bonda
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+    isDefault: true

@@ -1,0 +1,397 @@
+{
+  "uid": "eigenda-overview",
+  "title": "EigenDA Overview",
+  "tags": ["eigenda", "bonda"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Status",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "title": "Total Blobs",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT count(*) AS \"Total Blobs\" FROM eigenda.observed_blobs",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Recent Blobs (1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT count(*) AS \"Recent Blobs\" FROM eigenda.observed_blobs WHERE first_observed_at > NOW() - INTERVAL '1 hour'",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Relay Success Rate (1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 90 },
+              { "color": "green", "value": 99 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS \"Relay Success %\" FROM eigenda.retrieval_probes WHERE probe_time > NOW() - INTERVAL '1 hour' AND relay_key >= 0",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Operator Success Rate (1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 90 },
+              { "color": "green", "value": 99 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS \"Operator Success %\" FROM eigenda.operator_probes WHERE probe_time > NOW() - INTERVAL '1 hour'",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Time Series",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
+      "id": 7,
+      "title": "Relay Probes Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "ok" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "fail" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT time_bucket('5 minutes', probe_time) AS time, COUNT(*) FILTER (WHERE success) AS ok, COUNT(*) FILTER (WHERE NOT success) AS fail FROM eigenda.retrieval_probes WHERE $__timeFilter(probe_time) GROUP BY time ORDER BY time",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Relay Latency (p50/p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "p50" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p95" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT time_bucket('5 minutes', probe_time) AS time, percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE success) AS p50, percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE success) AS p95 FROM eigenda.retrieval_probes WHERE $__timeFilter(probe_time) AND relay_key >= 0 GROUP BY time ORDER BY time",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Survival & Attestation",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false
+    },
+    {
+      "id": 10,
+      "title": "Data Survival Curve",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "fillOpacity": 80
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 90 },
+              { "color": "green", "value": 99 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "xField": "age_bucket",
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT FLOOR(blob_age_hours / 12) * 12 AS age_bucket, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS success_rate, COUNT(*) AS sample_count FROM eigenda.retrieval_probes WHERE blob_age_hours IS NOT NULL AND blob_age_hours >= 0 GROUP BY age_bucket ORDER BY age_bucket",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Attestation Signing %",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT time_bucket('1 hour', snapshot_time) AS time, quorum_number, AVG(signing_stake_percentage) AS avg_pct FROM eigenda.attestation_snapshots WHERE $__timeFilter(snapshot_time) GROUP BY time, quorum_number ORDER BY time",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Tables",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false
+    },
+    {
+      "id": 13,
+      "title": "Recent Probes",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "success" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-text" }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "true": { "text": "OK", "color": "green" }, "false": { "text": "FAIL", "color": "red" } } }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT probe_time, blob_key, blob_age_hours, relay_key, success, latency_ms, kzg_verified FROM eigenda.retrieval_probes ORDER BY probe_time DESC LIMIT 20",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Per-Relay Stats",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "rawSql": "SELECT relay_key, COUNT(*) AS total, COUNT(*) FILTER (WHERE success) AS ok, ROUND(COUNT(*) FILTER (WHERE success)::numeric / NULLIF(COUNT(*)::numeric, 0) * 100, 1) AS success_pct, ROUND(AVG(latency_ms) FILTER (WHERE success)::numeric, 0) AS avg_lat FROM eigenda.retrieval_probes WHERE relay_key >= 0 GROUP BY relay_key ORDER BY relay_key",
+          "format": "table"
+        }
+      ]
+    }
+  ],
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1
+}
