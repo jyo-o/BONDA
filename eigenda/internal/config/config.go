@@ -32,7 +32,7 @@ type Config struct {
 	EjectionPollInterval   time.Duration
 
 	// Write prober (optional)
-	DisperserGRPCURL    string
+	EigenDAProxyURL     string
 	DisperserPrivateKey string
 
 	// API
@@ -63,7 +63,7 @@ func Load() *Config {
 		StakeIndexerInterval:   getDurationEnv("STAKE_INDEXER_INTERVAL", 1*time.Hour),
 		EjectionPollInterval:   getDurationEnv("EJECTION_POLL_INTERVAL", 12*time.Second),
 
-		DisperserGRPCURL:    getEnv("DISPERSER_GRPC_URL", ""),
+		EigenDAProxyURL:     getEnv("EIGENDA_PROXY_URL", "http://eigenda-proxy:3100"),
 		DisperserPrivateKey: getEnv("DISPERSER_PRIVATE_KEY", ""),
 
 		APIListenAddr:     getEnv("API_LISTEN_ADDR", ":8080"),

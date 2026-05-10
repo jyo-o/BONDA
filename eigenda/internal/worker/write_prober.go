@@ -1,29 +1,32 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 
 	"github.com/jyo-o/BONDA/eigenda/internal/db"
 )
 
 type WriteProber struct {
 	db       *db.DB
-	grpcURL  string
+	proxyURL string
 	interval time.Duration
+	client   *http.Client
 }
 
-func NewWriteProber(database *db.DB, grpcURL string, interval time.Duration) *WriteProber {
+func NewWriteProber(database *db.DB, proxyURL string, interval time.Duration) *WriteProber {
 	return &WriteProber{
 		db:       database,
-		grpcURL:  grpcURL,
+		proxyURL: proxyURL,
 		interval: interval,
+		client:   &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
@@ -31,8 +34,8 @@ func (w *WriteProber) Name() string { return "write-prober" }
 
 func (w *WriteProber) Run(ctx context.Context) {
 	log.Println("[write-prober] started")
-	if w.grpcURL == "" {
-		log.Println("[write-prober] DISPERSER_GRPC_URL not set, disabled")
+	if w.proxyURL == "" {
+		log.Println("[write-prober] EIGENDA_PROXY_URL not set, disabled")
 		return
 	}
 
@@ -54,53 +57,52 @@ func (w *WriteProber) Run(ctx context.Context) {
 func (w *WriteProber) disperse(ctx context.Context) {
 	start := time.Now()
 
-	// Generate random 128KiB payload (high byte zeroed for BN254)
+	// Generate random 128KiB payload (high byte zeroed for BN254 modulus)
 	payload := make([]byte, 128*1024)
 	if _, err := rand.Read(payload); err != nil {
 		log.Printf("[write-prober] rand read: %v", err)
 		return
 	}
-	// Zero high byte of each 32-byte field element to stay below BN254 modulus
 	for i := 0; i < len(payload); i += 32 {
-		if i < len(payload) {
-			payload[i] = 0
-		}
+		payload[i] = 0
 	}
 
-	// Connect to disperser
-	conn, err := grpc.NewClient(w.grpcURL,
-		grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")),
-	)
+	// Submit to eigenda-proxy
+	url := fmt.Sprintf("%s/put?commitment_mode=standard", w.proxyURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
-		log.Printf("[write-prober] dial disperser: %v", err)
+		log.Printf("[write-prober] create request: %v", err)
 		return
 	}
-	defer conn.Close()
+	req.Header.Set("Content-Type", "application/octet-stream")
 
-	// For MVP: log that we would disperse but the actual disperser proto
-	// integration requires payment setup. Record the attempt.
+	resp, err := w.client.Do(req)
+	if err != nil {
+		log.Printf("[write-prober] proxy request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
 	latencyMs := int(time.Since(start).Milliseconds())
 
-	// Generate a synthetic blob key for tracking
-	keyBytes := make([]byte, 32)
-	if _, err := rand.Read(keyBytes); err != nil {
-		log.Printf("[write-prober] rand read key: %v", err)
+	if resp.StatusCode != 200 {
+		log.Printf("[write-prober] proxy returned %d: %s (latency=%dms)", resp.StatusCode, string(body), latencyMs)
 		return
 	}
-	blobKey := hex.EncodeToString(keyBytes)
 
-	log.Printf("[write-prober] dispersal attempt completed in %dms (blob_key=%s)", latencyMs, blobKey[:12])
+	// Response body is the DA certificate (commitment bytes)
+	// Use hex-encoded cert as blob key for tracking
+	blobKey := hex.EncodeToString(body)
+	if len(blobKey) > 64 {
+		blobKey = blobKey[:64]
+	}
 
-	// TODO: When payment is configured, use the actual disperser v2 client:
-	// 1. disperserClient.DisperseBlob(ctx, &DisperseRequest{Data: payload, ...})
-	// 2. Poll disperserClient.GetBlobStatus(ctx, blobKey) until COMPLETE
-	// 3. Extract commitment from response
-	// 4. Record with actual blob key and commitment
+	log.Printf("[write-prober] dispersal OK latency=%dms cert=%s", latencyMs, blobKey[:12])
 
-	// For now, record the connectivity test
 	if err := w.db.UpsertBlob(ctx, &db.ObservedBlob{
-		BlobKey:            "self-" + blobKey,
-		BlobStatus:         "CONNECTIVITY_TEST",
+		BlobKey:            blobKey,
+		BlobStatus:         "CONFIRMED",
 		BlobSizeBytes:      len(payload),
 		RequestedAt:        uint64(time.Now().UnixNano()),
 		IsSelfDispersed:    true,
