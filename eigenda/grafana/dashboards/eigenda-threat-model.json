@@ -4,398 +4,133 @@
   "tags": ["eigenda", "bonda", "threat-model"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5m",
-  "time": {
-    "from": "now-7d",
-    "to": "now"
-  },
-  "fiscalYearStartMonth": 0,
-  "liveNow": false,
+  "time": {"from": "now-7d", "to": "now"},
   "panels": [
     {
-      "id": 1,
-      "title": "A: Promise Breach (약속 미이행)",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-      "collapsed": false
+      "id": 1, "title": "A: 약속 미이행 (Promise Breach)", "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "collapsed": false
     },
     {
-      "id": 2,
-      "title": "Survival Curve with CI",
-      "type": "bargauge",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 90 },
-              { "color": "green", "value": 99 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true
-      },
+      "id": 2, "title": "Data Survival Curve (12h buckets)", "type": "barchart",
+      "gridPos": {"h": 8, "w": 10, "x": 0, "y": 1},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT FLOOR(blob_age_hours / 12) * 12 AS \"Age (hours)\", COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS \"Success Rate %\", COUNT(*) AS \"Samples\" FROM eigenda.retrieval_probes WHERE blob_age_hours IS NOT NULL AND blob_age_hours >= 0 GROUP BY 1 ORDER BY 1", "format": "table", "editorMode": "code", "rawQuery": true}],
+      "fieldConfig": {"defaults": {"min": 0, "max": 100, "unit": "percent"}}
+    },
+    {
+      "id": 3, "title": "Blob Recoverability (1h)", "type": "stat",
+      "gridPos": {"h": 8, "w": 7, "x": 10, "y": 1},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT ROUND(COUNT(*) FILTER (WHERE total_chunks >= 1024)::numeric / NULLIF(COUNT(*)::numeric, 0) * 100, 1) AS \"Recoverable %\" FROM (SELECT blob_key, SUM(chunks_returned) FILTER (WHERE success) AS total_chunks FROM eigenda.operator_probes WHERE probe_time > NOW() - INTERVAL '1 hour' GROUP BY blob_key) sub", "format": "table", "editorMode": "code", "rawQuery": true}],
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 95}, {"color": "green", "value": 99}]}}}
+    },
+    {
+      "id": 4, "title": "Self-dispersed Blob Retrieval", "type": "table",
+      "gridPos": {"h": 8, "w": 7, "x": 17, "y": 1},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT ob.blob_key, ob.dispersal_latency_ms, rp.success AS relay_ok, rp.latency_ms AS relay_latency, rp.probe_time FROM eigenda.observed_blobs ob LEFT JOIN eigenda.retrieval_probes rp ON ob.blob_key = rp.blob_key WHERE ob.is_self_dispersed = true ORDER BY ob.first_observed_at DESC LIMIT 10", "format": "table", "editorMode": "code", "rawQuery": true}]
+    },
+    {
+      "id": 10, "title": "B: 단일 장애점 (Single Points of Failure)", "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9}, "collapsed": false
+    },
+    {
+      "id": 11, "title": "Relay vs Operator Success Rate", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
       "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT FLOOR(blob_age_hours / 12) * 12 || 'h' AS age_bucket, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS success_rate, COUNT(*) AS n, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 - 1.96 * SQRT(COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * (1 - COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0)) / NULLIF(COUNT(*)::float, 1)) * 100 AS ci_lower, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 + 1.96 * SQRT(COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * (1 - COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0)) / NULLIF(COUNT(*)::float, 1)) * 100 AS ci_upper FROM eigenda.retrieval_probes WHERE blob_age_hours IS NOT NULL AND blob_age_hours >= 0 GROUP BY FLOOR(blob_age_hours / 12) * 12 ORDER BY FLOOR(blob_age_hours / 12) * 12",
-          "format": "table"
-        }
+        {"refId": "A", "rawSql": "SELECT time_bucket('1 hour', probe_time) AS time, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS \"Relay %\" FROM eigenda.retrieval_probes WHERE $__timeFilter(probe_time) AND relay_key >= 0 GROUP BY 1 ORDER BY 1", "format": "time_series", "editorMode": "code", "rawQuery": true},
+        {"refId": "B", "rawSql": "SELECT time_bucket('1 hour', probe_time) AS time, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS \"Operator %\" FROM eigenda.operator_probes WHERE $__timeFilter(probe_time) GROUP BY 1 ORDER BY 1", "format": "time_series", "editorMode": "code", "rawQuery": true}
       ]
     },
     {
-      "id": 3,
-      "title": "Blob Recoverability Rate (1h)",
-      "type": "stat",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 90 },
-              { "color": "green", "value": 99 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
+      "id": 12, "title": "Per-Relay Stats", "type": "table",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 10},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT relay_key, COUNT(*) AS total, COUNT(*) FILTER (WHERE success) AS ok, ROUND(COUNT(*) FILTER (WHERE success)::numeric / NULLIF(COUNT(*)::numeric, 0) * 100, 1) AS \"Success %\", ROUND(AVG(latency_ms) FILTER (WHERE success)::numeric, 0) AS avg_lat FROM eigenda.retrieval_probes WHERE relay_key >= 0 GROUP BY relay_key ORDER BY relay_key", "format": "table", "editorMode": "code", "rawQuery": true}]
+    },
+    {
+      "id": 13, "title": "Dispersal Latency (self blobs)", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 10},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT first_observed_at AS time, dispersal_latency_ms AS \"Dispersal ms\" FROM eigenda.observed_blobs WHERE is_self_dispersed = true AND $__timeFilter(first_observed_at) ORDER BY first_observed_at", "format": "time_series", "editorMode": "code", "rawQuery": true}]
+    },
+    {
+      "id": 20, "title": "C: 권한 집중 (Authority Concentration)", "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18}, "collapsed": false
+    },
+    {
+      "id": 21, "title": "HHI per Quorum", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 19},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT snapshot_time AS time, quorum_id AS metric, hhi AS \"HHI\" FROM eigenda.stake_snapshots WHERE $__timeFilter(snapshot_time) ORDER BY snapshot_time", "format": "time_series", "editorMode": "code", "rawQuery": true}],
+      "fieldConfig": {"defaults": {"custom": {"thresholdsStyle": {"mode": "line"}}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1500}, {"color": "red", "value": 2500}]}}}
+    },
+    {
+      "id": 22, "title": "Top 5 Operators by Stake %", "type": "table",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 19},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT operator_id, quorum_id, ROUND(stake_pct::numeric, 2) AS \"Stake %\" FROM eigenda.stake_snapshot_operators WHERE snapshot_time = (SELECT MAX(snapshot_time) FROM eigenda.stake_snapshots) ORDER BY stake_pct DESC LIMIT 5", "format": "table", "editorMode": "code", "rawQuery": true}]
+    },
+    {
+      "id": 23, "title": "Operator Count per Quorum", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 19},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT snapshot_time AS time, quorum_id AS metric, operator_count AS \"Operators\" FROM eigenda.stake_snapshots WHERE $__timeFilter(snapshot_time) ORDER BY snapshot_time", "format": "time_series", "editorMode": "code", "rawQuery": true}]
+    },
+    {
+      "id": 30, "title": "D: 검증 공백 (Verification Gaps)", "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27}, "collapsed": false
+    },
+    {
+      "id": 31, "title": "KZG Verification Results", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT time_bucket('1 hour', probe_time) AS time, COUNT(*) FILTER (WHERE kzg_verified = true) AS \"Verified\", COUNT(*) FILTER (WHERE kzg_verified = false) AS \"Failed\" FROM eigenda.retrieval_probes WHERE $__timeFilter(probe_time) AND kzg_verified IS NOT NULL GROUP BY 1 ORDER BY 1", "format": "time_series", "editorMode": "code", "rawQuery": true}]
+    },
+    {
+      "id": 32, "title": "Attestation Signing % vs Relay Success %", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
       "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT ROUND(COUNT(*) FILTER (WHERE total_chunks >= 1024)::numeric / NULLIF(COUNT(*)::numeric, 0) * 100, 1) AS \"Recoverability %\" FROM (SELECT blob_key, SUM(chunks_returned) FILTER (WHERE success) AS total_chunks FROM eigenda.operator_probes WHERE probe_time > NOW() - INTERVAL '1 hour' GROUP BY blob_key) sub",
-          "format": "table"
-        }
+        {"refId": "A", "rawSql": "SELECT time_bucket('1 hour', snapshot_time) AS time, AVG(signing_stake_percentage) AS \"Attestation Signing %\" FROM eigenda.attestation_snapshots WHERE $__timeFilter(snapshot_time) GROUP BY 1 ORDER BY 1", "format": "time_series", "editorMode": "code", "rawQuery": true},
+        {"refId": "B", "rawSql": "SELECT time_bucket('1 hour', probe_time) AS time, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS \"Relay Success %\" FROM eigenda.retrieval_probes WHERE $__timeFilter(probe_time) AND relay_key >= 0 GROUP BY 1 ORDER BY 1", "format": "time_series", "editorMode": "code", "rawQuery": true}
       ]
     },
     {
-      "id": 4,
-      "title": "B: Trust Outsourcing (신뢰 외주화)",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
-      "collapsed": false
+      "id": 40, "title": "E: 경제적 비현실성 (Economic Assumptions)", "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36}, "collapsed": false
     },
     {
-      "id": 5,
-      "title": "Relay vs Operator Success Divergence",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "fillOpacity": 10,
-            "pointSize": 5,
-            "showPoints": "auto"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "relay_success_pct" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "operator_success_pct" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
-          }
-        ]
-      },
-      "options": {
-        "tooltip": { "mode": "multi", "sort": "desc" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT time_bucket('1 hour', probe_time) AS time, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS relay_success_pct FROM eigenda.retrieval_probes WHERE $__timeFilter(probe_time) AND relay_key >= 0 GROUP BY time ORDER BY time",
-          "format": "table"
-        },
-        {
-          "refId": "B",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT time_bucket('1 hour', probe_time) AS time, COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS operator_success_pct FROM eigenda.operator_probes WHERE $__timeFilter(probe_time) GROUP BY time ORDER BY time",
-          "format": "table"
-        }
-      ]
+      "id": 41, "title": "Ejection Events", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 37},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT time_bucket('1 day', event_time) AS time, COUNT(*) AS \"Ejections\" FROM eigenda.ejection_events WHERE $__timeFilter(event_time) GROUP BY 1 ORDER BY 1", "format": "time_series", "editorMode": "code", "rawQuery": true}]
     },
     {
-      "id": 6,
-      "title": "C: Authority Concentration (권한 집중)",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
-      "collapsed": false
+      "id": 42, "title": "Dead Operators", "type": "stat",
+      "gridPos": {"h": 8, "w": 4, "x": 8, "y": 37},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT COUNT(*) AS \"Dead Operators\" FROM (SELECT operator_id FROM eigenda.operator_probes GROUP BY operator_id HAVING COUNT(*) >= 5 AND COUNT(*) FILTER (WHERE success) = 0) sub", "format": "table", "editorMode": "code", "rawQuery": true}],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "red", "value": 10}]}}}
     },
     {
-      "id": 7,
-      "title": "HHI per Quorum",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "fillOpacity": 10,
-            "pointSize": 5,
-            "showPoints": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": { "mode": "multi", "sort": "desc" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT snapshot_time AS time, quorum_id, hhi FROM eigenda.stake_snapshots WHERE $__timeFilter(snapshot_time) ORDER BY snapshot_time",
-          "format": "table"
-        }
-      ]
+      "id": 43, "title": "Dead Operator List", "type": "table",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 37},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT operator_id, operator_socket, COUNT(*) AS total_probes, MAX(error_message) AS last_error FROM eigenda.operator_probes GROUP BY operator_id, operator_socket HAVING COUNT(*) >= 5 AND COUNT(*) FILTER (WHERE success) = 0 ORDER BY total_probes DESC", "format": "table", "editorMode": "code", "rawQuery": true}]
     },
     {
-      "id": 8,
-      "title": "Top 5 Operators by Stake %",
-      "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "sortBy": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT operator_id, quorum_id, stake_pct, stake FROM eigenda.stake_snapshot_operators WHERE snapshot_time = (SELECT MAX(snapshot_time) FROM eigenda.stake_snapshots) ORDER BY stake_pct DESC LIMIT 5",
-          "format": "table"
-        }
-      ]
+      "id": 50, "title": "F: 시간·버전 격차 (Version & Temporal Gaps)", "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 45}, "collapsed": false
     },
     {
-      "id": 9,
-      "title": "D: Verification Gaps (검증 공백)",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
-      "collapsed": false
-    },
-    {
-      "id": 10,
-      "title": "KZG Verification Success",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "fillOpacity": 20,
-            "pointSize": 5,
-            "showPoints": "auto"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "verified" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "failed" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
-          }
-        ]
-      },
-      "options": {
-        "tooltip": { "mode": "multi", "sort": "desc" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT time_bucket('1 hour', probe_time) AS time, COUNT(*) FILTER (WHERE kzg_verified = true) AS verified, COUNT(*) FILTER (WHERE kzg_verified = false) AS failed FROM eigenda.retrieval_probes WHERE $__timeFilter(probe_time) AND kzg_verified IS NOT NULL GROUP BY time ORDER BY time",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 11,
-      "title": "Attestation vs Actual Retrievability",
-      "type": "stat",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 90 },
-              { "color": "green", "value": 99 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
-        "orientation": "horizontal",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT 'Attestation Signing' AS metric, ROUND(AVG(signing_stake_percentage)::numeric, 1) AS value FROM eigenda.attestation_snapshots WHERE snapshot_time > NOW() - INTERVAL '24 hours' UNION ALL SELECT 'Relay Retrieval' AS metric, ROUND(COUNT(*) FILTER (WHERE success)::numeric / NULLIF(COUNT(*)::numeric, 0) * 100, 1) AS value FROM eigenda.retrieval_probes WHERE probe_time > NOW() - INTERVAL '24 hours' AND relay_key >= 0",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 12,
-      "title": "E: Economic Assumptions (경제적 가정)",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
-      "collapsed": false
-    },
-    {
-      "id": 13,
-      "title": "Ejection Events",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 80,
-            "pointSize": 5
-          },
-          "color": { "fixedColor": "red", "mode": "fixed" }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": { "mode": "single" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT time_bucket('1 day', event_time) AS time, COUNT(*) AS ejections FROM eigenda.ejection_events WHERE $__timeFilter(event_time) GROUP BY time ORDER BY time",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 14,
-      "title": "Dead Operators vs Ejection Rate",
-      "type": "stat",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 5 },
-              { "color": "red", "value": 10 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
-        "orientation": "horizontal",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT 'Unresponsive Operators' AS metric, COUNT(DISTINCT operator_id) AS value FROM eigenda.operator_probes WHERE success = false AND probe_time > NOW() - INTERVAL '24 hours' AND operator_id NOT IN (SELECT DISTINCT operator_id FROM eigenda.operator_probes WHERE success = true AND probe_time > NOW() - INTERVAL '24 hours') UNION ALL SELECT 'Ejections (7d)' AS metric, COUNT(*) AS value FROM eigenda.ejection_events WHERE event_time > NOW() - INTERVAL '7 days'",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 15,
-      "title": "F: Version Gaps (버전 격차)",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
-      "collapsed": false
-    },
-    {
-      "id": 16,
-      "title": "Operator Connection Errors",
-      "type": "table",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 46 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "sortBy": [{ "displayName": "count", "desc": true }]
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
-          "rawSql": "SELECT error_message, COUNT(*) AS count FROM eigenda.operator_probes WHERE success = false AND probe_time > NOW() - INTERVAL '24 hours' GROUP BY error_message ORDER BY count DESC LIMIT 10",
-          "format": "table"
-        }
-      ]
+      "id": 51, "title": "Operator Error Patterns (24h)", "type": "table",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 46},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "bonda-tsdb"},
+      "targets": [{"refId": "A", "rawSql": "SELECT CASE WHEN error_message LIKE '%version%' OR error_message LIKE '%unsupported%' THEN 'VERSION_MISMATCH' WHEN error_message LIKE '%DeadlineExceeded%' THEN 'TIMEOUT' WHEN error_message LIKE '%connection refused%' OR error_message LIKE '%no route%' THEN 'UNREACHABLE' ELSE 'OTHER' END AS error_type, error_message, COUNT(*) AS count FROM eigenda.operator_probes WHERE success = false AND probe_time > NOW() - INTERVAL '24 hours' GROUP BY error_type, error_message ORDER BY count DESC LIMIT 15", "format": "table", "editorMode": "code", "rawQuery": true}]
     }
-  ],
-  "templating": { "list": [] },
-  "annotations": { "list": [] },
-  "editable": true,
-  "graphTooltip": 1
+  ]
 }
