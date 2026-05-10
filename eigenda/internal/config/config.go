@@ -22,6 +22,7 @@ type Config struct {
 	StakeIndexerEnabled     bool
 	EjectionIndexerEnabled  bool
 	KZGVerifyEnabled        bool
+	OperatorStatusEnabled   bool
 
 	// Tuning
 	CollectorPollInterval  time.Duration
@@ -29,7 +30,8 @@ type Config struct {
 	ReverifierInterval     time.Duration
 	WriteProberInterval    time.Duration
 	StakeIndexerInterval   time.Duration
-	EjectionPollInterval   time.Duration
+	EjectionPollInterval     time.Duration
+	OperatorStatusInterval   time.Duration
 
 	// Write prober (optional)
 	EigenDAProxyURL     string
@@ -56,6 +58,7 @@ func Load() *Config {
 		StakeIndexerEnabled:     getBoolEnv("STAKE_INDEXER_ENABLED", true),
 		EjectionIndexerEnabled:  getBoolEnv("EJECTION_INDEXER_ENABLED", true),
 		KZGVerifyEnabled:        getBoolEnv("KZG_VERIFY_ENABLED", true),
+		OperatorStatusEnabled:   getBoolEnv("OPERATOR_STATUS_ENABLED", false),
 
 		CollectorPollInterval:  getDurationEnv("COLLECTOR_POLL_INTERVAL", 3*time.Second),
 		RelayVerifierParallel:  getIntEnv("RELAY_VERIFIER_PARALLEL", 10),
@@ -63,6 +66,7 @@ func Load() *Config {
 		WriteProberInterval:    getDurationEnv("WRITE_PROBER_INTERVAL", 5*time.Minute),
 		StakeIndexerInterval:   getDurationEnv("STAKE_INDEXER_INTERVAL", 1*time.Hour),
 		EjectionPollInterval:   getDurationEnv("EJECTION_POLL_INTERVAL", 12*time.Second),
+		OperatorStatusInterval: getDurationEnv("OPERATOR_STATUS_INTERVAL", 6*time.Hour),
 
 		EigenDAProxyURL:     getEnv("EIGENDA_PROXY_URL", "http://eigenda-proxy:3100"),
 		DisperserPrivateKey: getEnv("DISPERSER_PRIVATE_KEY", ""),

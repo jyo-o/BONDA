@@ -82,6 +82,19 @@ CREATE TABLE IF NOT EXISTS eigenda.stake_snapshot_operators (
 );
 SELECT create_hypertable('eigenda.stake_snapshot_operators', 'snapshot_time', if_not_exists => TRUE);
 
+CREATE TABLE IF NOT EXISTS eigenda.operator_status_snapshots (
+    snapshot_time       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    operator_address    VARCHAR(42) NOT NULL,
+    metadata_name       TEXT,
+    status              VARCHAR(16) NOT NULL,
+    total_stakers       INTEGER,
+    total_avs           INTEGER,
+    tvl_eth             FLOAT
+);
+SELECT create_hypertable('eigenda.operator_status_snapshots', 'snapshot_time', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS idx_oss_addr ON eigenda.operator_status_snapshots(operator_address);
+CREATE INDEX IF NOT EXISTS idx_oss_status ON eigenda.operator_status_snapshots(status);
+
 CREATE TABLE IF NOT EXISTS eigenda.ejection_events (
     event_time       TIMESTAMPTZ NOT NULL,
     block_number     BIGINT NOT NULL,

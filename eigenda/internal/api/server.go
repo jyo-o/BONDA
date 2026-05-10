@@ -31,6 +31,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/hhi", s.handleHHI)
 	mux.HandleFunc("/api/ejections", s.handleEjections)
 	mux.HandleFunc("/api/probes", s.handleProbes)
+	mux.HandleFunc("/api/operator-status", s.handleOperatorStatus)
 
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
 	log.Printf("[api] listening on %s", s.addr)
@@ -339,4 +340,46 @@ func (s *Server) handleProbes(w http.ResponseWriter, r *http.Request) {
 		probes = append(probes, p)
 	}
 	writeJSON(w, probes)
+}
+
+func (s *Server) handleOperatorStatus(w http.ResponseWriter, r *http.Request) {
+	statusFilter := r.URL.Query().Get("status") // "active", "inactive", or "" for all
+
+	type opStatus struct {
+		SnapshotTime    time.Time `json:"snapshot_time"`
+		OperatorAddress string    `json:"operator_address"`
+		MetadataName    string    `json:"metadata_name"`
+		Status          string    `json:"status"`
+		TotalStakers    int       `json:"total_stakers"`
+		TotalAvs        int       `json:"total_avs"`
+		TVLETH          float64   `json:"tvl_eth"`
+	}
+
+	query := `
+		SELECT DISTINCT ON (operator_address)
+			snapshot_time, operator_address, metadata_name, status,
+			total_stakers, total_avs, tvl_eth
+		FROM eigenda.operator_status_snapshots
+		ORDER BY operator_address, snapshot_time DESC`
+
+	rows, err := s.db.QueryContext(r.Context(), query)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var ops []opStatus
+	for rows.Next() {
+		var o opStatus
+		if err := rows.Scan(&o.SnapshotTime, &o.OperatorAddress, &o.MetadataName,
+			&o.Status, &o.TotalStakers, &o.TotalAvs, &o.TVLETH); err != nil {
+			continue
+		}
+		if statusFilter != "" && o.Status != statusFilter {
+			continue
+		}
+		ops = append(ops, o)
+	}
+	writeJSON(w, ops)
 }

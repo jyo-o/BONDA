@@ -77,6 +77,15 @@ type EjectionEvent struct {
 	QuorumNumber int
 }
 
+type OperatorStatus struct {
+	OperatorAddress string
+	MetadataName    string
+	Status          string // "active" or "inactive"
+	TotalStakers    int
+	TotalAvs        int
+	TVLETH          float64
+}
+
 type AgedBlobKey struct {
 	BlobKey     string
 	RequestedAt uint64
@@ -176,6 +185,16 @@ CREATE TABLE IF NOT EXISTS eigenda.stake_snapshot_operators (
     operator_id      VARCHAR(128),
     stake            NUMERIC,
     stake_pct        FLOAT
+);
+
+CREATE TABLE IF NOT EXISTS eigenda.operator_status_snapshots (
+    snapshot_time       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    operator_address    VARCHAR(42) NOT NULL,
+    metadata_name       TEXT,
+    status              VARCHAR(16) NOT NULL,
+    total_stakers       INTEGER,
+    total_avs           INTEGER,
+    tvl_eth             FLOAT
 );
 
 CREATE TABLE IF NOT EXISTS eigenda.ejection_events (
@@ -379,6 +398,45 @@ func (d *DB) GetBlobCommitment(ctx context.Context, blobKey string) (commitmentX
 		blobKey,
 	).Scan(&commitmentX, &commitmentY)
 	return
+}
+
+func (d *DB) UpsertOperatorStatus(ctx context.Context, o *OperatorStatus) error {
+	_, err := d.conn.ExecContext(ctx, `
+		INSERT INTO eigenda.operator_status_snapshots
+			(operator_address, metadata_name, status, total_stakers, total_avs, tvl_eth)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		o.OperatorAddress, o.MetadataName, o.Status,
+		o.TotalStakers, o.TotalAvs, o.TVLETH,
+	)
+	return err
+}
+
+func (d *DB) GetDeadOperators(ctx context.Context) ([]OperatorStatus, error) {
+	rows, err := d.conn.QueryContext(ctx, `
+		WITH latest AS (
+			SELECT DISTINCT ON (operator_address)
+				operator_address, metadata_name, status, total_stakers, total_avs, tvl_eth
+			FROM eigenda.operator_status_snapshots
+			ORDER BY operator_address, snapshot_time DESC
+		)
+		SELECT operator_address, metadata_name, status, total_stakers, total_avs, tvl_eth
+		FROM latest
+		WHERE status = 'inactive'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []OperatorStatus
+	for rows.Next() {
+		var o OperatorStatus
+		if err := rows.Scan(&o.OperatorAddress, &o.MetadataName, &o.Status,
+			&o.TotalStakers, &o.TotalAvs, &o.TVLETH); err != nil {
+			return nil, err
+		}
+		result = append(result, o)
+	}
+	return result, rows.Err()
 }
 
 // Conn returns the underlying *sql.DB for use by the API server.
