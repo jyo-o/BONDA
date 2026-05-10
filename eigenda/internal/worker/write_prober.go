@@ -4,29 +4,34 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/jyo-o/BONDA/eigenda/internal/dataapi"
 	"github.com/jyo-o/BONDA/eigenda/internal/db"
 )
 
 type WriteProber struct {
-	db       *db.DB
-	proxyURL string
-	interval time.Duration
-	client   *http.Client
+	db        *db.DB
+	api       *dataapi.Client
+	proxyURL  string
+	accountID string
+	interval  time.Duration
+	client    *http.Client
 }
 
-func NewWriteProber(database *db.DB, proxyURL string, interval time.Duration) *WriteProber {
+func NewWriteProber(database *db.DB, api *dataapi.Client, proxyURL string, accountID string, interval time.Duration) *WriteProber {
 	return &WriteProber{
-		db:       database,
-		proxyURL: proxyURL,
-		interval: interval,
-		client:   &http.Client{Timeout: 5 * time.Minute},
+		db:        database,
+		api:       api,
+		proxyURL:  proxyURL,
+		accountID: strings.ToLower(accountID),
+		interval:  interval,
+		client:    &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
@@ -91,14 +96,14 @@ func (w *WriteProber) disperse(ctx context.Context) {
 		return
 	}
 
-	// Response body is the DA certificate (commitment bytes)
-	// Use hex-encoded cert as blob key for tracking
-	blobKey := hex.EncodeToString(body)
-	if len(blobKey) > 64 {
-		blobKey = blobKey[:64]
-	}
+	log.Printf("[write-prober] dispersal OK latency=%dms", latencyMs)
 
-	log.Printf("[write-prober] dispersal OK latency=%dms cert=%s", latencyMs, blobKey[:12])
+	// Find the actual blob_key from DataAPI by matching our account
+	blobKey := w.findSelfBlob(ctx)
+	if blobKey == "" {
+		log.Printf("[write-prober] dispersal succeeded but could not find blob in DataAPI")
+		return
+	}
 
 	if err := w.db.UpsertBlob(ctx, &db.ObservedBlob{
 		BlobKey:            blobKey,
@@ -110,4 +115,26 @@ func (w *WriteProber) disperse(ctx context.Context) {
 	}); err != nil {
 		log.Printf("[write-prober] upsert blob: %v", err)
 	}
+
+	log.Printf("[write-prober] recorded blob_key=%s", blobKey[:16])
+}
+
+// findSelfBlob queries DataAPI for the most recent blob from our account.
+func (w *WriteProber) findSelfBlob(ctx context.Context) string {
+	// Retry a few times — there may be a short delay before our blob appears
+	for i := 0; i < 5; i++ {
+		feed, err := w.api.FetchBlobFeed(20, "")
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		for _, blob := range feed.Blobs {
+			acct := strings.ToLower(blob.BlobMetadata.BlobHeader.PaymentMetadata.AccountID)
+			if acct == w.accountID {
+				return blob.BlobKey
+			}
+		}
+		time.Sleep(3 * time.Second)
+	}
+	return ""
 }

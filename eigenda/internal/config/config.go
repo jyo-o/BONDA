@@ -34,6 +34,7 @@ type Config struct {
 	// Write prober (optional)
 	EigenDAProxyURL     string
 	DisperserPrivateKey string
+	DisperserAccountID  string
 
 	// API
 	APIListenAddr     string
@@ -65,6 +66,7 @@ func Load() *Config {
 
 		EigenDAProxyURL:     getEnv("EIGENDA_PROXY_URL", "http://eigenda-proxy:3100"),
 		DisperserPrivateKey: getEnv("DISPERSER_PRIVATE_KEY", ""),
+		DisperserAccountID: getEnv("DISPERSER_ACCOUNT_ID", ""),
 
 		APIListenAddr:     getEnv("API_LISTEN_ADDR", ":8080"),
 		MetricsListenAddr: getEnv("METRICS_LISTEN_ADDR", ":9090"),

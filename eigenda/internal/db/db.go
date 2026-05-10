@@ -203,7 +203,9 @@ func (d *DB) UpsertBlob(ctx context.Context, b *ObservedBlob) error {
 			requested_at, expiry_unix_sec, commitment_x, commitment_y, quorum_numbers,
 			is_self_dispersed, dispersal_latency_ms)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (blob_key) DO NOTHING`,
+		ON CONFLICT (blob_key) DO UPDATE SET
+			is_self_dispersed = EXCLUDED.is_self_dispersed OR eigenda.observed_blobs.is_self_dispersed,
+			dispersal_latency_ms = COALESCE(NULLIF(EXCLUDED.dispersal_latency_ms, 0), eigenda.observed_blobs.dispersal_latency_ms)`,
 		b.BlobKey, b.AccountID, b.BlobStatus, b.BlobSizeBytes,
 		b.RequestedAt, b.ExpiryUnixSec, b.CommitmentX, b.CommitmentY, b.QuorumNumbers,
 		b.IsSelfDispersed, b.DispersalLatencyMs,
