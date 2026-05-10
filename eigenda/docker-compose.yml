@@ -23,8 +23,12 @@ services:
       - --storage.backends-to-enable=V2
       - --storage.dispersal-backend=V2
       - --eigenda.v2.network=mainnet
+      - --eigenda.v2.eigenda-directory=0x64AB2e9A86FA2E183CB6f01B2D4050c1c2dFAad4
+      - --eigenda.v2.cert-verifier-router-or-immutable-verifier-addr=0x2ea418AE1852bfC79e18B37E55F278F9c598AA08
       - --eigenda.v2.eth-rpc=${ETH_RPC_URL}
       - --eigenda.v2.signer-payment-key-hex=${DISPERSER_PRIVATE_KEY}
+      - --eigenda.v2.blob-certified-timeout=2m
+      - --eigenda.v2.max-blob-length=16MiB
       - --port=3100
       - --log.level=info
     healthcheck:
@@ -32,7 +36,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 120s
     restart: unless-stopped
 
   prober:
@@ -41,12 +45,15 @@ services:
       timescaledb:
         condition: service_healthy
       eigenda-proxy:
-        condition: service_healthy
+        condition: service_started
     env_file:
       - .env
     environment:
       TIMESCALEDB_URL: postgres://bonda:bonda@timescaledb:5432/bonda?sslmode=disable
       EIGENDA_PROXY_URL: http://eigenda-proxy:3100
+    ports:
+      - "8080:8080"
+      - "9090:9090"
     restart: unless-stopped
 
   grafana:
@@ -56,6 +63,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
