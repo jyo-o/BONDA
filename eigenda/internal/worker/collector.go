@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -58,16 +59,22 @@ func (c *BlobCollector) collectBlobs(ctx context.Context) int {
 		if blob.BlobMetadata.RequestedAt <= c.lastSeenTimestamp {
 			break
 		}
+		var cumPayment *string
+		if cp := blob.BlobMetadata.BlobHeader.PaymentMetadata.CumulativePayment; cp != 0 {
+			s := fmt.Sprintf("%d", cp)
+			cumPayment = &s
+		}
 		err := c.db.UpsertBlob(ctx, &db.ObservedBlob{
-			BlobKey:       blob.BlobKey,
-			AccountID:     blob.BlobMetadata.BlobHeader.PaymentMetadata.AccountID,
-			BlobStatus:    blob.BlobMetadata.BlobStatus,
-			BlobSizeBytes: blob.BlobMetadata.BlobSizeBytes,
-			RequestedAt:   blob.BlobMetadata.RequestedAt,
-			ExpiryUnixSec: blob.BlobMetadata.ExpiryUnixSec,
-			CommitmentX:   blob.BlobMetadata.BlobHeader.BlobCommitments.Commitment.X,
-			CommitmentY:   blob.BlobMetadata.BlobHeader.BlobCommitments.Commitment.Y,
-			QuorumNumbers: blob.BlobMetadata.BlobHeader.QuorumNumbers,
+			BlobKey:           blob.BlobKey,
+			AccountID:         blob.BlobMetadata.BlobHeader.PaymentMetadata.AccountID,
+			BlobStatus:        blob.BlobMetadata.BlobStatus,
+			BlobSizeBytes:     blob.BlobMetadata.BlobSizeBytes,
+			RequestedAt:       blob.BlobMetadata.RequestedAt,
+			ExpiryUnixSec:     blob.BlobMetadata.ExpiryUnixSec,
+			CommitmentX:       blob.BlobMetadata.BlobHeader.BlobCommitments.Commitment.X,
+			CommitmentY:       blob.BlobMetadata.BlobHeader.BlobCommitments.Commitment.Y,
+			QuorumNumbers:     blob.BlobMetadata.BlobHeader.QuorumNumbers,
+			CumulativePayment: cumPayment,
 		})
 		if err == nil {
 			newCount++

@@ -98,29 +98,36 @@ func (w *WriteProber) disperse(ctx context.Context) {
 
 	log.Printf("[write-prober] dispersal OK latency=%dms", latencyMs)
 
-	// Find the actual blob_key from DataAPI by matching our account
-	blobKey := w.findSelfBlob(ctx)
-	if blobKey == "" {
+	// Find the actual blob from DataAPI by matching our account
+	blob := w.findSelfBlob(ctx)
+	if blob == nil {
 		log.Printf("[write-prober] dispersal succeeded but could not find blob in DataAPI")
 		return
 	}
 
+	var cumPayment *string
+	if cp := blob.BlobMetadata.BlobHeader.PaymentMetadata.CumulativePayment; cp != 0 {
+		s := fmt.Sprintf("%d", cp)
+		cumPayment = &s
+	}
+
 	if err := w.db.UpsertBlob(ctx, &db.ObservedBlob{
-		BlobKey:            blobKey,
+		BlobKey:            blob.BlobKey,
 		BlobStatus:         "CONFIRMED",
 		BlobSizeBytes:      len(payload),
 		RequestedAt:        uint64(time.Now().UnixNano()),
 		IsSelfDispersed:    true,
 		DispersalLatencyMs: latencyMs,
+		CumulativePayment:  cumPayment,
 	}); err != nil {
 		log.Printf("[write-prober] upsert blob: %v", err)
 	}
 
-	log.Printf("[write-prober] recorded blob_key=%s", blobKey[:16])
+	log.Printf("[write-prober] recorded blob_key=%s cumulative_payment=%v", blob.BlobKey[:16], cumPayment)
 }
 
 // findSelfBlob queries DataAPI for the most recent blob from our account.
-func (w *WriteProber) findSelfBlob(ctx context.Context) string {
+func (w *WriteProber) findSelfBlob(ctx context.Context) *dataapi.BlobEntry {
 	// Retry a few times — there may be a short delay before our blob appears
 	for i := 0; i < 5; i++ {
 		feed, err := w.api.FetchBlobFeed(20, "")
@@ -131,10 +138,10 @@ func (w *WriteProber) findSelfBlob(ctx context.Context) string {
 		for _, blob := range feed.Blobs {
 			acct := strings.ToLower(blob.BlobMetadata.BlobHeader.PaymentMetadata.AccountID)
 			if acct == w.accountID {
-				return blob.BlobKey
+				return &blob
 			}
 		}
 		time.Sleep(3 * time.Second)
 	}
-	return ""
+	return nil
 }

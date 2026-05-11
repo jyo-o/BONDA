@@ -148,6 +148,11 @@ func main() {
 		}
 	}
 
+	// Health recorder
+	if cfg.HealthRecorderEnabled {
+		mgr.Register(worker.NewHealthRecorder(database, cfg.HealthRecorderInterval))
+	}
+
 	// API server
 	apiServer := api.NewServer(database.Conn(), cfg.APIListenAddr)
 	go func() {

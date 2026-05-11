@@ -32,6 +32,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/ejections", s.handleEjections)
 	mux.HandleFunc("/api/probes", s.handleProbes)
 	mux.HandleFunc("/api/operator-status", s.handleOperatorStatus)
+	mux.HandleFunc("/api/account-usage", s.handleAccountUsage)
 
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
 	log.Printf("[api] listening on %s", s.addr)
@@ -382,4 +383,42 @@ func (s *Server) handleOperatorStatus(w http.ResponseWriter, r *http.Request) {
 		ops = append(ops, o)
 	}
 	writeJSON(w, ops)
+}
+
+func (s *Server) handleAccountUsage(w http.ResponseWriter, r *http.Request) {
+	type accountUsage struct {
+		AccountID               string  `json:"account_id"`
+		BlobCount               int     `json:"blob_count"`
+		TotalBytes              int64   `json:"total_bytes"`
+		FirstSeen               *string `json:"first_seen"`
+		LastSeen                *string `json:"last_seen"`
+		SelfDispersedCount      int     `json:"self_dispersed_count"`
+		AvgBlobSize             *int    `json:"avg_blob_size"`
+		LatestCumulativePayment *string `json:"latest_cumulative_payment"`
+	}
+
+	rows, err := s.db.QueryContext(r.Context(), `
+		SELECT account_id, blob_count, total_bytes, first_seen, last_seen,
+			self_dispersed_count, avg_blob_size, latest_cumulative_payment
+		FROM eigenda.account_usage
+		ORDER BY blob_count DESC
+		LIMIT 100
+	`)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var accounts []accountUsage
+	for rows.Next() {
+		var a accountUsage
+		if err := rows.Scan(&a.AccountID, &a.BlobCount, &a.TotalBytes,
+			&a.FirstSeen, &a.LastSeen, &a.SelfDispersedCount,
+			&a.AvgBlobSize, &a.LatestCumulativePayment); err != nil {
+			continue
+		}
+		accounts = append(accounts, a)
+	}
+	writeJSON(w, accounts)
 }

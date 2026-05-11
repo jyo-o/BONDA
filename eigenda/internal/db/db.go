@@ -21,6 +21,7 @@ type ObservedBlob struct {
 	QuorumNumbers      string
 	IsSelfDispersed    bool
 	DispersalLatencyMs int
+	CumulativePayment  *string // from DataAPI PaymentMetadata, nullable
 }
 
 type ProbeResult struct {
@@ -211,6 +212,79 @@ CREATE INDEX IF NOT EXISTS idx_rp_blob_key ON eigenda.retrieval_probes(blob_key)
 CREATE INDEX IF NOT EXISTS idx_rp_age ON eigenda.retrieval_probes(blob_age_hours);
 CREATE INDEX IF NOT EXISTS idx_op_blob ON eigenda.operator_probes(blob_key);
 CREATE INDEX IF NOT EXISTS idx_op_ts ON eigenda.operator_probes(probe_time);
+
+CREATE TABLE IF NOT EXISTS eigenda.da_layer_metadata (
+    da_layer                TEXT PRIMARY KEY,
+    chain_decimals          INT,
+    native_token            TEXT,
+    block_time_seconds      NUMERIC,
+    retention_policy        TEXT,
+    retention_days_claim    NUMERIC,
+    retention_source_url    TEXT,
+    finality_seconds_claim  NUMERIC,
+    notes                   TEXT,
+    updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO eigenda.da_layer_metadata (
+    da_layer, chain_decimals, native_token,
+    block_time_seconds, retention_policy, retention_days_claim,
+    retention_source_url, finality_seconds_claim, notes
+) VALUES
+    ('eigenda', 18, 'ETH', 12, 'hard', 14,
+     'https://docs.eigenlayer.xyz/eigenda/overview', 720,
+     'Documented 14-day retention via operator stake commitment.'),
+    ('ethereum', 18, 'ETH', 12, 'hard', 18,
+     'https://eips.ethereum.org/EIPS/eip-4844', 780,
+     'EIP-4844 blob retention 4096 epochs ~ 18.2 days.'),
+    ('celestia', 6, 'TIA', 6, 'soft', NULL,
+     'https://docs.celestia.org/concepts/data-availability-faq', 6,
+     'No hard retention guarantee. Pruning window commonly ~30 days.'),
+    ('avail', 18, 'AVAIL', 20, 'soft', NULL,
+     'https://docs.availproject.org/docs/learn-about-avail/lcs-and-clients', 20,
+     'Light client retention depends on config.')
+ON CONFLICT (da_layer) DO NOTHING;
+
+ALTER TABLE eigenda.observed_blobs
+    ADD COLUMN IF NOT EXISTS cumulative_payment NUMERIC;
+
+CREATE TABLE IF NOT EXISTS eigenda.prober_health (
+    ts                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    goroutines          INT,
+    heap_alloc_mb       FLOAT,
+    heap_sys_mb         FLOAT,
+    db_open_conns       INT,
+    db_in_use           INT,
+    db_idle             INT,
+    db_wait_count       BIGINT,
+    db_wait_duration_ms BIGINT,
+    uptime_seconds      BIGINT
+);
+
+CREATE OR REPLACE VIEW eigenda.account_usage AS
+SELECT
+    account_id,
+    COUNT(*)                                          AS blob_count,
+    SUM(blob_size_bytes)                              AS total_bytes,
+    MIN(first_observed_at)                            AS first_seen,
+    MAX(first_observed_at)                            AS last_seen,
+    COUNT(*) FILTER (WHERE is_self_dispersed)          AS self_dispersed_count,
+    AVG(blob_size_bytes)::INT                          AS avg_blob_size,
+    MAX(cumulative_payment)                            AS latest_cumulative_payment
+FROM eigenda.observed_blobs
+WHERE account_id IS NOT NULL AND account_id != ''
+GROUP BY account_id;
+
+CREATE OR REPLACE VIEW eigenda.account_usage_hourly AS
+SELECT
+    date_trunc('hour', first_observed_at) AS hour,
+    account_id,
+    COUNT(*)                              AS blob_count,
+    SUM(blob_size_bytes)                  AS total_bytes,
+    AVG(blob_size_bytes)::INT             AS avg_blob_size
+FROM eigenda.observed_blobs
+WHERE account_id IS NOT NULL AND account_id != ''
+GROUP BY 1, 2;
 `
 	_, err := d.conn.ExecContext(ctx, migrations)
 	return err
@@ -220,14 +294,15 @@ func (d *DB) UpsertBlob(ctx context.Context, b *ObservedBlob) error {
 	_, err := d.conn.ExecContext(ctx, `
 		INSERT INTO eigenda.observed_blobs (blob_key, account_id, blob_status, blob_size_bytes,
 			requested_at, expiry_unix_sec, commitment_x, commitment_y, quorum_numbers,
-			is_self_dispersed, dispersal_latency_ms)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			is_self_dispersed, dispersal_latency_ms, cumulative_payment)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (blob_key) DO UPDATE SET
 			is_self_dispersed = EXCLUDED.is_self_dispersed OR eigenda.observed_blobs.is_self_dispersed,
-			dispersal_latency_ms = COALESCE(NULLIF(EXCLUDED.dispersal_latency_ms, 0), eigenda.observed_blobs.dispersal_latency_ms)`,
+			dispersal_latency_ms = COALESCE(NULLIF(EXCLUDED.dispersal_latency_ms, 0), eigenda.observed_blobs.dispersal_latency_ms),
+			cumulative_payment = COALESCE(EXCLUDED.cumulative_payment, eigenda.observed_blobs.cumulative_payment)`,
 		b.BlobKey, b.AccountID, b.BlobStatus, b.BlobSizeBytes,
 		b.RequestedAt, b.ExpiryUnixSec, b.CommitmentX, b.CommitmentY, b.QuorumNumbers,
-		b.IsSelfDispersed, b.DispersalLatencyMs,
+		b.IsSelfDispersed, b.DispersalLatencyMs, b.CumulativePayment,
 	)
 	return err
 }
@@ -437,6 +512,34 @@ func (d *DB) GetDeadOperators(ctx context.Context) ([]OperatorStatus, error) {
 		result = append(result, o)
 	}
 	return result, rows.Err()
+}
+
+type ProberHealth struct {
+	Goroutines      int
+	HeapAllocMB     float64
+	HeapSysMB       float64
+	DBOpenConns     int
+	DBInUse         int
+	DBIdle          int
+	DBWaitCount     int64
+	DBWaitDurationMs int64
+	UptimeSeconds   int64
+}
+
+func (d *DB) InsertProberHealth(ctx context.Context, h *ProberHealth) error {
+	_, err := d.conn.ExecContext(ctx, `
+		INSERT INTO eigenda.prober_health (goroutines, heap_alloc_mb, heap_sys_mb,
+			db_open_conns, db_in_use, db_idle, db_wait_count, db_wait_duration_ms, uptime_seconds)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		h.Goroutines, h.HeapAllocMB, h.HeapSysMB,
+		h.DBOpenConns, h.DBInUse, h.DBIdle, h.DBWaitCount, h.DBWaitDurationMs, h.UptimeSeconds,
+	)
+	return err
+}
+
+// DBStats returns the underlying connection pool stats.
+func (d *DB) DBStats() sql.DBStats {
+	return d.conn.Stats()
 }
 
 // Conn returns the underlying *sql.DB for use by the API server.

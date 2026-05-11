@@ -25,7 +25,7 @@
       "title": "Total Operators",
       "type": "stat",
       "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
@@ -47,7 +47,7 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
           "rawSql": "SELECT COUNT(DISTINCT operator_id) AS \"Total Operators\" FROM eigenda.operator_probes",
           "format": "table"
         }
@@ -58,7 +58,7 @@
       "title": "Dead Operators (>=5 consecutive failures)",
       "type": "stat",
       "gridPos": { "h": 4, "w": 8, "x": 8, "y": 1 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
@@ -82,7 +82,7 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
           "rawSql": "SELECT COUNT(*) AS \"Dead Operators\" FROM (SELECT operator_id, COUNT(*) AS fail_count FROM (SELECT operator_id, success, ROW_NUMBER() OVER (PARTITION BY operator_id ORDER BY probe_time DESC) AS rn FROM eigenda.operator_probes) recent WHERE rn <= 5 AND NOT success GROUP BY operator_id HAVING COUNT(*) = 5) sub",
           "format": "table"
         }
@@ -93,7 +93,7 @@
       "title": "Avg Chunks per Operator",
       "type": "stat",
       "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
@@ -115,7 +115,7 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
           "rawSql": "SELECT ROUND(AVG(chunks_returned)::numeric, 0) AS \"Avg Chunks\" FROM eigenda.operator_probes WHERE success = true",
           "format": "table"
         }
@@ -133,7 +133,7 @@
       "title": "Per-Operator Success Rate",
       "type": "table",
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 6 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -172,7 +172,7 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
           "rawSql": "SELECT operator_id, operator_socket, COUNT(*) AS total, COUNT(*) FILTER (WHERE success) AS ok, ROUND(COUNT(*) FILTER (WHERE success)::numeric / NULLIF(COUNT(*)::numeric, 0) * 100, 1) AS success_pct, ROUND(AVG(latency_ms) FILTER (WHERE success)::numeric, 0) AS avg_lat, ROUND(AVG(chunks_returned) FILTER (WHERE success)::numeric, 0) AS avg_chunks FROM eigenda.operator_probes GROUP BY operator_id, operator_socket ORDER BY success_pct ASC",
           "format": "table"
         }
@@ -190,7 +190,7 @@
       "title": "Top 10 Worst Operators - Probe Success Over Time",
       "type": "timeseries",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
-      "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
@@ -212,7 +212,7 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "bonda-tsdb" },
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "bonda-tsdb" },
           "rawSql": "WITH worst AS (SELECT operator_id FROM eigenda.operator_probes GROUP BY operator_id ORDER BY COUNT(*) FILTER (WHERE success)::float / NULLIF(COUNT(*)::float, 0) ASC LIMIT 10) SELECT time_bucket('1 hour', p.probe_time) AS time, p.operator_id, COUNT(*) FILTER (WHERE p.success)::float / NULLIF(COUNT(*)::float, 0) * 100 AS success_pct FROM eigenda.operator_probes p JOIN worst w ON p.operator_id = w.operator_id WHERE $__timeFilter(p.probe_time) GROUP BY time, p.operator_id ORDER BY time",
           "format": "table"
         }
