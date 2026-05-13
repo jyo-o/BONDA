@@ -12,7 +12,7 @@
 | # | Severity | File | Bug | Auth | PoC Status |
 |---|----------|------|-----|------|------------|
 | F-01 | ~~High~~ **Info** | `relay/server.go:503` | BlobKey raw cast panic — **unreachable** (getKeysFromChunkRequest가 먼저 검증) | operator | DISPROVEN |
-| F-02 | High | `relay/server.go:785` | uint32 overflow → rate limit bypass | operator | **CONFIRMED** |
+| F-02 | Medium | `relay/server.go:785` | uint32 overflow → rate limit bypass (32 blob reqs에서 wrap-around, MaxKeys 설정 의존) | operator | **CONFIRMED (조건부)** |
 | F-03 | Medium | `relay/server.go:162` | ReplayGuardian copy-paste bug | - | **CONFIRMED** |
 | F-04 | Medium | `server_v2.go:498` | uint32→uint8 quorum downcast | no auth | **CONFIRMED** |
 | F-05 | Medium | `thegraph/state.go:265,334` | BN254 IsInSubGroup() missing | TheGraph | **CONFIRMED** |
@@ -90,17 +90,19 @@ requiredBandwidth += requestedChunks * metadata.chunkSizeBytes
 
 **PoC result**:
 ```
-$ go run poc_f02.go
-Overflow: 65536 * 65537 = uint32(65536), actual = 4295032832
-  uint32 result: 65536 bytes (64.00 KB)
-  actual result: 4295032832 bytes (4.00 GB)
+현실적 값으로 재계산:
+- Per request: 8192 chunks * 16384 bytes = 134,217,728 (128 MB)
+- 32 requests: uint32 total = 0 (128MB * 32 = 4GB = uint32 wrap to 0)
+- Rate limit: 20 MiB
+- 0 < 20 MiB → BYPASSES rate limit
 
-Rate limit: 20971520 bytes (20 MiB)
-Overflow result 65536 < rate limit 20971520? true
-Actual 4295032832 > rate limit 20971520? true
-
-F-02 CONFIRMED: uint32 overflow bypasses rate limit
-  Attacker requests 4.00 GB but rate limiter sees 64.00 KB
+F-02 CONFIRMED (조건부):
+  32개 blob 요청(각 전체 chunk range)을 단일 GetChunks에 넣으면
+  128MB * 32 = 4GB → uint32 overflow → 0 → rate limit 우회
+  
+  단, MaxKeysPerGetChunksRequest >= 32이어야 함.
+  테스트 설정: 1024 (충분), 프로덕션 설정: 미확인.
+  기본값이 없으므로(Go zero value = 0), 설정 안 하면 체크 무효화.
 ```
 
 ---
