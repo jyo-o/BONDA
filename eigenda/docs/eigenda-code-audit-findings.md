@@ -11,7 +11,7 @@
 
 | # | Severity | File | Bug | Auth | PoC Status |
 |---|----------|------|-----|------|------------|
-| F-01 | High | `relay/server.go:503` | BlobKey raw cast panic | operator | **CONFIRMED** |
+| F-01 | ~~High~~ **Info** | `relay/server.go:503` | BlobKey raw cast panic — **unreachable** (getKeysFromChunkRequest가 먼저 검증) | operator | DISPROVEN |
 | F-02 | High | `relay/server.go:785` | uint32 overflow → rate limit bypass | operator | **CONFIRMED** |
 | F-03 | Medium | `relay/server.go:162` | ReplayGuardian copy-paste bug | - | **CONFIRMED** |
 | F-04 | Medium | `server_v2.go:498` | uint32→uint8 quorum downcast | no auth | **CONFIRMED** |
@@ -53,6 +53,14 @@ $ go run poc_f01.go
 SHORT SLICE PANIC: runtime error: cannot convert slice with length 31
   to array or pointer to array with length 32
 F-01 CONFIRMED: v2.BlobKey() panics on <32 byte input
+
+BUT: 실제 GetChunks 경로에서는 getKeysFromChunkRequest() (line 345)가
+downloadDataFromRelays() (line 503)보다 먼저 실행되며,
+BytesToBlobKey()로 길이를 검증합니다. 31바이트는 line 345에서 에러로 거부되어
+line 503에 도달하지 않습니다.
+
+DISPROVEN: panic 가능한 코드이지만 unreachable path.
+코드 품질 문제(defensive programming 위반)이지 exploit은 아님.
 ```
 
 ---
