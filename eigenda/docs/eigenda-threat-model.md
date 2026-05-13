@@ -15,27 +15,33 @@
 
 EigenDA restaked stake (StakeRegistry `getCurrentTotalStake` 온체인 조회):
 
-| Quorum | 자산 | 온체인 값 | USD 환산 |
-|--------|------|---------|---------|
-| Q0 | ETH restaked | **2,368,378 ETH** | ~$5.45B (@$2,302) |
-| Q1 | EIGEN restaked | **272,711,608 EIGEN** | ~$64M (@$0.235) |
-| Q2 | Custom token | 806,428 tokens | 미확인 |
-| **총** | | | **~$5.52B** |
+| Quorum | 온체인 raw 값 | 의미 |
+|--------|-------------|------|
+| Q0 | **2,368,378 units** | ETH-denominated **weighted stake** (13개 strategy × multiplier 합산) |
+| Q1 | **272,711,608 units** | EIGEN-denominated weighted stake |
+| Q2 | **806,428 units** | Custom token weighted stake |
 
 > StakeRegistry: `0x006124Ae7976137266feeBFb3F4D2BE4C073139D`
-> ETH 가격: CoinGecko API 실시간 조회, EIGEN 가격: 동일
+>
+> **⚠ 해석 주의**: `getCurrentTotalStake`는 ETH/EIGEN **수량이 아니라** `Σ(operator_shares × strategy_multiplier)` 가중값.
+> Q0만 해도 13개 strategy (Beacon ETH, stETH, rETH, cbETH 등)가 있고, 각각 다른 multiplier(1.0, 1.043, 1.114 등)가 적용됨.
+> **"2,368,378 ETH restaked"로 해석하면 부정확** — ETH-denominated 근사치로만 참고 가능.
+> 정확한 ETH 수량을 알려면 strategy별 shares를 개별 조회하여 ETH로 변환해야 함 (미완료).
 
-롤업 TVL (DefiLlama API — 온체인 데이터 기반 집계):
+롤업 TVL:
 
-| 롤업 | TVL | EigenDA 사용 |
-|------|-----|------------|
-| MegaETH | **$756.9M** | 확인 |
-| Celo | **$23.3M** | 확인 (bridge-verified) |
-| Fuel, Aevo 등 | 미확인 | 미확인 |
-| **확인 가능 합계** | **~$780M** | |
+| 롤업 | DefiLlama chain TVL | 의미 |
+|------|---------------------|------|
+| MegaETH | $756.9M | 체인 위 DeFi 프로토콜 TVL 합산 |
+| Celo | $23.3M | 동일 |
+| Ronin | $14.6M | 동일 |
 
-> 참고: L2BEAT는 $780M+ TVS를 주장하지만, L2BEAT 자체가 검증 출처가 아님.
-> 위 수치는 DefiLlama API + 온체인 StakeRegistry에서 직접 조회한 값.
+> **⚠ 해석 주의**: DefiLlama chain TVL ≠ bridge에 잠긴 자산 ≠ EigenDA가 보호하는 자산.
+> - **DefiLlama chain TVL**: 해당 체인 위의 DeFi 유동성 합산 (2차 집계)
+> - **Bridge 잔액**: L1 bridge 컨트랙트에 잠긴 자산 = DA 실패 시 직접 위험 (미조회)
+> - 정확한 TVS를 알려면 각 롤업의 OptimismPortal/L1StandardBridge 잔액을 직접 조회해야 함
+>
+> 모든 TVL/TVS 수치는 **참고용 근사치**이며, 어떤 출처도 100% 정확하지 않음.
 
 **핵심**: EigenDA가 14일간 데이터를 보관하므로, 공격 시점에 14일 내 제출된 모든 blob이 위험. 해당 기간의 롤업 트랜잭션 총액이 실제 노출 규모.
 
