@@ -91,7 +91,7 @@
 | **Impact** | **High** — 14일 내 해당 operator에 할당된 chunk 전부 조회 불가. 충분한 operator가 lazy하면 RS 복구 실패 → 데이터 영구 유실 |
 | **Likelihood** | **Medium** — 코드 수정은 쉽지만, slashing 없어도 ejection 리스크 + 평판 리스크. 하지만 DAS가 없어서 **탐지 수단이 없음** |
 | **Detection** | **없음** — DAS/Light Node 미구현. 외부 retrieval probe(BONDA)만 유일한 탐지 수단 |
-| **Risk** | **High** |
+| **Risk** | **Medium** (RS coding rate 1/8 → 서명자의 87.5%가 동시 lazy해야 데이터 유실. 현재 lazy 3.4%, gap 84%p. 장기 누적 리스크는 존재하나 즉시 위협은 낮음) |
 
 ### T2. Disperser 검열 — 특정 롤업 blob 거부
 
@@ -212,7 +212,7 @@ High
 
 | Risk Level | 위협 | 핵심 이유 |
 |-----------|------|----------|
-| **High** | T1. Lazy Signing | 탐지 수단 0 (DAS 없음) + 처벌 0 (slashing 없음) + 공격 비용 최저 |
+| **Medium** | T1. Lazy Signing | 탐지 0 + 처벌 0이지만, RS 1/8 coding → 87.5% 동시 담합 필요. 현재 lazy 3.4%. 장기 누적 리스크 |
 | **Low** | T4. Relay DDoS | SPOF + 무인증이지만 Cloudflare 뒤에 배치. 1940 RPS 실측에도 실패 0. 원본 서버 직접 도달 불가 |
 | **Medium** | T2. Disperser 검열 | 중앙화 SPOF이지만 fallback 존재 |
 | **Medium** | T3. CertVerifier 교체 | $670M 전액 위험이지만 multisig 타협 극히 어려움 |
