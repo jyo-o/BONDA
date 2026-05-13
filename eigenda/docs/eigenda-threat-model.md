@@ -131,9 +131,9 @@
 | **선행 조건** | relay 엔드포인트 (on-chain 공개) + DDoS 인프라 |
 | **타겟 자산** | Data Availability, Liveness |
 | **Impact** | **High** — relay 마비 시 operator chunk pull 불가 → 새 배치 attestation 실패 → blob GATHERING_SIGS에서 정체. 기존 blob은 14일 내 조회 불가 |
-| **Likelihood** | **Medium** — relay 엔드포인트 공개, 인증 불필요, 단일 타겟 |
+| **Likelihood** | **Low~Medium** — relay 엔드포인트 공개, 인증 불필요, 단일 타겟. 단, Sepolia 테스트넷 실측에서 단일 머신 1940 RPS (30초 지속, 58,698 요청)에도 rate limit 미작동 — 테스트넷 설정이 느슨하거나 기본값(1024/s)보다 높게 설정된 것으로 추정. 실제 메인넷 rate limit 설정은 미확인. 효과적인 DoS에는 봇넷급 트래픽 필요 |
 | **Detection** | relay 응답률/지연 모니터링 (BONDA relay verifier) |
-| **Risk** | **High** |
+| **Risk** | **Medium** (테스트넷 실측 결과 반영하여 High → Medium으로 하향) |
 
 ### T5. Stale RBN 공격 — 과거 stake 분포 악용
 
@@ -202,8 +202,8 @@ Likelihood ↓
 Very Low                                                  T3(거버넌스)
 Low                          T5(RBN)        T7(attest)
                              T2(검열)
-Medium                       T6(dead op)    T1(lazy sign)
-                                            T4(relay DDoS)
+                             T4(relay DDoS)
+Medium           T8(인코딩)   T6(dead op)    T1(lazy sign)
 High
 ─────────────────────────────────────────────────────────────────
 ```
@@ -213,7 +213,7 @@ High
 | Risk Level | 위협 | 핵심 이유 |
 |-----------|------|----------|
 | **High** | T1. Lazy Signing | 탐지 수단 0 (DAS 없음) + 처벌 0 (slashing 없음) + 공격 비용 최저 |
-| **High** | T4. Relay DDoS | SPOF + 공개 엔드포인트 + 무인증 + $670M 가용성 위협 |
+| **Medium** | T4. Relay DDoS | SPOF + 무인증이지만, 테스트넷 실측 1940 RPS에도 rate limit 미작동. 효과적 DoS에는 봇넷급 필요 |
 | **Medium** | T2. Disperser 검열 | 중앙화 SPOF이지만 fallback 존재 |
 | **Medium** | T3. CertVerifier 교체 | $670M 전액 위험이지만 multisig 타협 극히 어려움 |
 | **Medium** | T5. Stale RBN | 직접 통합 롤업만 해당 (소수) |
